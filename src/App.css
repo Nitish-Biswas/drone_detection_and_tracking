@@ -1,0 +1,52 @@
+.App {
+  font-family: Arial, sans-serif;
+  background-color: #f0f2f5;
+  min-height: 100vh;
+  padding: 0; /* Remove unnecessary padding */
+  display: block; /* Remove flex centering so content fills width */
+  margin: 0;
+}
+
+
+
+button {
+  padding: 15px 20px;
+  margin: 20px;
+  /* margin-bottom: 50px; */
+  background-color: #007bff;
+  border: none;
+  color: white;
+  font-size: 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  font-family: "Roboto Mono", monospace;
+  font-optical-sizing: auto;
+  font-weight: 800;
+  font-style: normal;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+video {
+  max-width: 100%;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.video-info {
+  text-align: left;
+  background: #fff;
+  padding: 5px 15px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  margin-top: 5px;
+}
