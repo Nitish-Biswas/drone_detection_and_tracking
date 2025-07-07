@@ -52,11 +52,11 @@ function VideoUploader() {
   const handleStartCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      console.log('Got stream:', stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch((err) => {
-          setError('Failed to play camera stream: ' + err.message);
-        });
+        console.log('Set srcObject on videoRef:', videoRef.current);
+        // No need to call play() here, browser will handle it with autoPlay
       }
       setVideoSrc(null);
       setVideoDetails(null);
@@ -76,13 +76,23 @@ function VideoUploader() {
   };
 
   useEffect(() => {
+    if (isCameraOn && videoRef.current) {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then((stream) => {
+          videoRef.current.srcObject = stream;
+        })
+        .catch((err) => {
+          setError('Unable to access camera: ' + err.message);
+        });
+    }
+    // Cleanup
     return () => {
-      handleStopCamera();
-      if (videoSrc) {
-        URL.revokeObjectURL(videoSrc);
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
-  }, [videoSrc]);
+  }, [isCameraOn]);
 
   return (
     <div style={{ padding: '20px', textAlign: 'center' }}>
