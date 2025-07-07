@@ -1,6 +1,7 @@
 .App {
   font-family: Arial, sans-serif;
-  background-color: #f0f2f5;
+  
+  background: #0a0a23;
   min-height: 100vh;
   padding: 0; /* Remove unnecessary padding */
   display: block; /* Remove flex centering so content fills width */

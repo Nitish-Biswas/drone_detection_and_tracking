@@ -72,8 +72,9 @@ function DroneDashboard() {
           </ul>
           <p>System Uptime: 12 minutes</p>
         </div>
+        </div>
 
-        <div className="chart">
+        {/* <div className="chart">
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -83,8 +84,8 @@ function DroneDashboard() {
               <Line type="monotone" dataKey="confidence" stroke="#00ffff" />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      </div>
+        </div> */}
+      
 
       <div className="buttons">
         <button className="green">System Online</button>

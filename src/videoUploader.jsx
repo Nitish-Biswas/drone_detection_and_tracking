@@ -15,13 +15,11 @@ function VideoUploader() {
 
     if (!file) return;
 
-    // Check if the file is a video
     if (!file.type.startsWith('video/')) {
       setError('Please upload a valid video file (e.g., MP4, WebM).');
       return;
     }
 
-    // Revoke previous object URL to avoid memory leaks
     if (videoSrc) {
       URL.revokeObjectURL(videoSrc);
     }
@@ -36,7 +34,6 @@ function VideoUploader() {
     setIsCameraOn(false);
   };
 
-  // Detect if the video can play
   const handleVideoLoaded = () => {
     setError(null);
   };
@@ -51,18 +48,30 @@ function VideoUploader() {
 
   const handleStartCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+      const obsDevice = videoDevices.find((d) => d.label.includes('OBS'));
+
+      if (!obsDevice) {
+        setError('OBS Virtual Camera not found. Please start OBS Virtual Camera.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: obsDevice.deviceId } }
+      });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch((err) => {
-          setError('Failed to play camera stream: ' + err.message);
-        });
+        await videoRef.current.play();
       }
+
       setVideoSrc(null);
       setVideoDetails(null);
       setIsCameraOn(true);
+      setError(null);
     } catch (err) {
-      setError('Unable to access camera: ' + err.message);
+      setError('Unable to access OBS Virtual Camera: ' + err.message);
     }
   };
 
@@ -85,9 +94,9 @@ function VideoUploader() {
   }, [videoSrc]);
 
   return (
-    <div style={{ padding: '20px', textAlign: 'center' }}>
-      <h2>Upload and Play Video / Use Camera</h2>
-      
+    <div style={{ padding: '20px', textAlign: 'center', color: 'white' }}>
+      <h2>Upload and Play Video / Use OBS Camera</h2>
+
       <div style={{ margin: '10px' }}>
         <input
           type="file"
@@ -103,7 +112,7 @@ function VideoUploader() {
 
       <div style={{ margin: '10px' }}>
         {!isCameraOn ? (
-          <button onClick={handleStartCamera}>Turn On Camera</button>
+          <button onClick={handleStartCamera}>Turn On OBS Camera</button>
         ) : (
           <button onClick={handleStopCamera}>Turn Off Camera</button>
         )}
