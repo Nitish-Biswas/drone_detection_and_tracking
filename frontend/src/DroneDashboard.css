@@ -1,7 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Afacad+Flux:wght@100..1000&family=Inconsolata:wdth,wght@81.2,200..900&family=Patrick+Hand&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Tiny5&display=swap');
 
+.d-dashboard{
+  text-align: center;
+  align-items: center;
+}
 
-
+.buttons{
+  display: flex;
+  justify-content: center;
+}
 
 .dashboard-container {
   padding: 30px;
@@ -10,6 +17,7 @@
   width: 100vw;
   min-height: 100vh;
   box-sizing: border-box;
+  
 
   font-family: "Roboto Mono", monospace;
   font-optical-sizing: auto;
@@ -19,15 +27,16 @@
 
 .top-section {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: wrap; 
   gap: 25px;
   width: 100%;
   margin-bottom: 50px;
+  justify-content: center;
 }
 
 .system-metrics {
   margin: 20px 0;
-  flex: 1 1 300px; 
+  /* flex: 1 1 300px;  */
   background: #1e1e2f;
   padding: 30px;
   border-radius: 10px;
@@ -36,6 +45,8 @@
   font-optical-sizing: auto;
   font-weight: 100;
   font-style: normal;
+  
+  
 }
 
 .chart {

@@ -1,59 +1,53 @@
-import React from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
+import React, { useState } from 'react';
 import './DroneDashboard.css';
-
-const data = Array.from({ length: 85 }, (_, i) => ({
-  event: i + 1,
-  confidence: (Math.random() * 0.4 + 0.5).toFixed(3), // Random confidence between 0.5-0.9
-}));
 
 const detections = [
   {
-    timestamp: '2025-06-08 01:05:36',
-    type: 'Commercial Survey',
+    droneId: 'DRN-001',
+    duration: '15s',
+    startTime: '2025-06-08 01:05:34',
     confidence: 0.759,
-    threat: 'LOW',
-    position: '(-280.3, 170.6, 171.2)',
-    velocity: '(0.0, 0.0, 0.0)',
   },
   {
-    timestamp: '2025-06-08 01:05:35',
-    type: 'DJI Mavic',
+    droneId: 'DRN-002',
+    duration: '12s',
+    startTime: '2025-06-08 01:05:35',
     confidence: 0.891,
-    threat: 'MEDIUM',
-    position: '(-243.7, 397.4, 145.2)',
-    velocity: '(0.0, 0.0, 0.0)',
   },
   {
-    timestamp: '2025-06-08 01:05:35',
-    type: 'Commercial Survey',
+    droneId: 'DRN-003',
+    duration: '10s',
+    startTime: '2025-06-08 01:05:35',
     confidence: 0.725,
-    threat: 'LOW',
-    position: '(431.2, 468.3, 51.4)',
-    velocity: '(0.0, 0.0, 0.0)',
   },
   {
-    timestamp: '2025-06-08 01:05:34',
-    type: 'FPV Racing',
+    droneId: 'DRN-004',
+    duration: '20s',
+    startTime: '2025-06-08 01:05:34',
     confidence: 0.509,
-    threat: 'HIGH',
-    position: '(490.6, -366.3, 20.0)',
-    velocity: '(23.8, 0.0, 0.0)',
   },
   {
-    timestamp: '2025-06-08 01:05:34',
-    type: 'DJI Phantom',
+    droneId: 'DRN-005',
+    duration: '8s',
+    startTime: '2025-06-08 01:05:36',
     confidence: 0.777,
-    threat: 'MEDIUM',
-    position: '(190.8, -1481.1, 105.8)',
-    velocity: '(0.0, 0.0, 0.0)',
   },
 ];
 
 function DroneDashboard() {
+  const [selectedDrone, setSelectedDrone] = useState(null);
+
+  const openGraphPopup = (drone) => {
+    setSelectedDrone(drone);
+  };
+
+  const closeGraphPopup = () => {
+    setSelectedDrone(null);
+  };
+
   return (
     <div className="dashboard-container">
-      <h1>Drone Detection System Dashboard</h1>
+      <h1 className='d-dashboard'>Drone Detection System Dashboard</h1>
       <br />
 
       <div className="top-section">
@@ -72,20 +66,7 @@ function DroneDashboard() {
           </ul>
           <p>System Uptime: 12 minutes</p>
         </div>
-        </div>
-
-        {/* <div className="chart">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="event" />
-              <YAxis domain={[0.5, 0.9]} />
-              <Tooltip />
-              <Line type="monotone" dataKey="confidence" stroke="#00ffff" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div> */}
-      
+      </div>
 
       <div className="buttons">
         <button className="green">System Online</button>
@@ -99,28 +80,43 @@ function DroneDashboard() {
         <table>
           <thead>
             <tr>
-              <th>Timestamp</th>
-              <th>Drone Type</th>
+              <th>Drone ID</th>
+              <th>Graph</th>
+              <th>Duration</th>
+              <th>Start Time</th>
               <th>Confidence</th>
-              <th>Threat Level</th>
-              <th>Position (X,Y,Z)</th>
-              <th>Velocity (X,Y,Z)</th>
             </tr>
           </thead>
           <tbody>
             {detections.map((det, index) => (
               <tr key={index}>
-                <td>{det.timestamp}</td>
-                <td>{det.type}</td>
+                <td>{det.droneId}</td>
+                <td>
+                  <button onClick={() => window.open(`/graph.html?droneId=${det.droneId}`, '_blank')}>Map</button>
+                </td>
+                <td>{det.duration}</td>
+                <td>{det.startTime}</td>
                 <td>{det.confidence}</td>
-                <td>{det.threat}</td>
-                <td>{det.position}</td>
-                <td>{det.velocity}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {selectedDrone && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2>Graph for {selectedDrone.droneId}</h2>
+            {/* Placeholder image for matplotlib graph */}
+            <img
+              src="https://via.placeholder.com/500x300.png?text=Matplotlib+Graph+Here"
+              alt="Graph"
+            />
+            <br /><br />
+            <button onClick={closeGraphPopup}>Close</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
