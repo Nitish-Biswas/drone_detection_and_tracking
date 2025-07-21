@@ -1,2 +1,11 @@
-node_modules
-venv
+drone_venv/
+deep_sort/
+__pycache__/
+*.pyc
+backend/__pycache__/
+backend/*.pyc
+frontend/node_modules/
+lms.py
+.DS_Store
+backend/.DS_Store
+backend/drone_tracking.db
