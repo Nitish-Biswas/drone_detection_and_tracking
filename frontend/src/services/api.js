@@ -113,6 +113,7 @@ export const getHealthStatus = async () => {
 
 // Utility function to get video stream URL
 export const getVideoStreamUrl = () => {
+  console.log("Fetching video stream URL")
   return `${API_BASE_URL}${API_ENDPOINTS.VIDEO}`
 }
 

@@ -3,8 +3,10 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
-from database import get_session
 import time
+from contextlib import asynccontextmanager
+from sqlmodel import SQLModel, create_engine
+from database import get_session
 from models import (
     Detection, DetectionResponse, DetectionCreate, 
     CameraStatus, WebSocketMessage
@@ -22,12 +24,33 @@ from pathlib import Path
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+DATABASE_URL = "sqlite:///./drone_tracking.db"
+engine = create_engine(DATABASE_URL, echo=True)
+
+# This function will run during startup and shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create database tables
+    print("Creating database tables...")
+    SQLModel.metadata.create_all(engine)
+    print("✅ Database tables created successfully")
+    
+    # Initialize your tracker here if needed
+    # tracker = initialize_tracker()
+    
+    yield  # App runs here
+    
+    # Shutdown cleanup (optional)
+    print("🛑 Application shutting down")
+
+
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Drone Tracking API",
     description="Real-time drone detection and tracking system",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware for frontend integration
@@ -43,7 +66,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Global tracker instance - Replace with your model path
-MODEL_PATH = "best.pt"  # Change this to your YOLO model path
+MODEL_PATH = "/Users/nitishbiswas/Documents/GitHub/drone_detection_and_tracking/backend/best.pt"  # Change this to your YOLO model path
 tracker: Optional[DroneTracker] = None
 
 # WebSocket connection manager
@@ -65,7 +88,7 @@ class ConnectionManager:
         """Broadcast message to all connected clients"""
         if not self.active_connections:
             return
-
+            
         disconnected = []
         for connection in self.active_connections:
             try:
@@ -73,7 +96,7 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"Error sending message to client: {e}")
                 disconnected.append(connection)
-
+                
         # Remove disconnected clients
         for connection in disconnected:
             self.disconnect(connection)
@@ -87,20 +110,20 @@ def initialize_tracker():
         if not os.path.exists(MODEL_PATH):
             logger.error(f"Model file not found: {MODEL_PATH}")
             return None
-
+            
         tracker = DroneTracker(MODEL_PATH, confidence_threshold=0.5)
-
+        
         # Set WebSocket callbacks
         async def on_new_detection(data):
             await manager.broadcast(json.dumps(data))
-
+            
         async def on_status_update(data):
             await manager.broadcast(json.dumps(data))
-
+            
         tracker.set_callbacks(on_new_detection, on_status_update)
         logger.info("Tracker initialized successfully")
         return tracker
-
+        
     except Exception as e:
         logger.error(f"Failed to initialize tracker: {e}")
         return None
@@ -110,10 +133,12 @@ def initialize_tracker():
 async def startup_event():
     initialize_tracker()
 
+initialize_tracker()
+
 def generate_frames():
     """Generate video frames for streaming"""
     global tracker
-
+    
     if not tracker:
         # Return a placeholder frame
         frame = cv2.imread('static/placeholder.jpg') if os.path.exists('static/placeholder.jpg') else None
@@ -122,7 +147,7 @@ def generate_frames():
             frame = cv2.zeros((480, 640, 3), dtype=cv2.uint8)
             cv2.putText(frame, "Camera Not Available", (50, 240), 
                        cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-
+        
         while True:
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
@@ -131,11 +156,11 @@ def generate_frames():
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
             asyncio.sleep(1)  # 1 FPS for placeholder
         return
-
+    
     while True:
         try:
             frame = tracker.get_latest_frame()
-
+            
             if frame is None:
                 # Create a "no signal" frame
                 frame = cv2.zeros((480, 640, 3), dtype=cv2.uint8)
@@ -147,15 +172,15 @@ def generate_frames():
                                cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
                     cv2.putText(frame, "Click Start to begin tracking", (50, 300), 
                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
+            
             # Encode frame as JPEG
             ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if not ret:
                 continue
-
+                
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-
+                   
         except Exception as e:
             logger.error(f"Error generating frame: {e}")
             # Yield error frame
@@ -166,8 +191,8 @@ def generate_frames():
             if ret:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-
-        time.sleep(0.033)  # ~30 FPS
+            
+        time.sleep(0.033)  # ~30 FPS - FIXED
 
 # API Routes
 
@@ -188,20 +213,30 @@ async def root():
 
 @app.get("/video")
 async def video_feed():
+    logger.info("streaming video feed")
+    
     """Stream video feed with drone detection overlay"""
     return StreamingResponse(
         generate_frames(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache", 
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "*"
+        }
     )
 
 @app.post("/camera/{action}")
 async def camera_control(action: str) -> CameraStatus:
     """Control camera (start/stop)"""
     global tracker
-
+    
     if not tracker:
         raise HTTPException(status_code=503, detail="Tracker not initialized")
-
+    
     if action.lower() == "start":
         if tracker.is_camera_running():
             return CameraStatus(
@@ -209,7 +244,7 @@ async def camera_control(action: str) -> CameraStatus:
                 message="Camera is already running",
                 total_detections_today=tracker.get_today_detection_count()
             )
-
+        
         success = tracker.start()
         if success:
             return CameraStatus(
@@ -219,7 +254,7 @@ async def camera_control(action: str) -> CameraStatus:
             )
         else:
             raise HTTPException(status_code=500, detail="Failed to start camera")
-
+            
     elif action.lower() == "stop":
         if not tracker.is_camera_running():
             return CameraStatus(
@@ -227,7 +262,7 @@ async def camera_control(action: str) -> CameraStatus:
                 message="Camera is already stopped",
                 total_detections_today=tracker.get_today_detection_count()
             )
-
+        
         success = tracker.stop()
         if success:
             return CameraStatus(
@@ -237,7 +272,7 @@ async def camera_control(action: str) -> CameraStatus:
             )
         else:
             raise HTTPException(status_code=500, detail="Failed to stop camera")
-
+            
     else:
         raise HTTPException(status_code=400, detail="Invalid action. Use 'start' or 'stop'")
 
@@ -245,14 +280,14 @@ async def camera_control(action: str) -> CameraStatus:
 async def camera_status() -> CameraStatus:
     """Get current camera status"""
     global tracker
-
+    
     if not tracker:
         return CameraStatus(
             is_running=False,
             message="Tracker not initialized",
             total_detections_today=0
         )
-
+    
     return CameraStatus(
         is_running=tracker.is_camera_running(),
         message="Camera status retrieved",
@@ -265,6 +300,7 @@ async def get_today_detections(session: Session = Depends(get_session)):
     today = date.today()
     statement = select(Detection).where(Detection.detection_date == today).order_by(Detection.start_time.desc())
     detections = session.exec(statement).all()
+    logger.info(f"Retrieved {len(detections)} detections for today: {today}")
     return detections
 
 @app.get("/detections/", response_model=List[DetectionResponse])
@@ -283,6 +319,7 @@ async def get_detections_by_date(detection_date: date, session: Session = Depend
     """Get detections for specific date"""
     statement = select(Detection).where(Detection.detection_date == detection_date).order_by(Detection.start_time.desc())
     detections = session.exec(statement).all()
+    logger.info(f"Retrieved {len(detections)} detections for date: {detection_date}")
     return detections
 
 @app.post("/detections/", response_model=DetectionResponse)
@@ -300,7 +337,7 @@ async def delete_detection(detection_id: int, session: Session = Depends(get_ses
     detection = session.get(Detection, detection_id)
     if not detection:
         raise HTTPException(status_code=404, detail="Detection not found")
-
+    
     session.delete(detection)
     session.commit()
     return {"message": "Detection deleted successfully"}
@@ -320,14 +357,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 "timestamp": datetime.now().isoformat()
             }
             await websocket.send_text(json.dumps(status_message))
-
+        
         while True:
             # Keep connection alive and handle incoming messages
             data = await websocket.receive_text()
             # Echo back or handle specific commands if needed
             if data == "ping":
                 await websocket.send_text(json.dumps({"event": "pong", "timestamp": datetime.now().isoformat()}))
-
+                
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

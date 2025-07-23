@@ -91,6 +91,7 @@ class DroneTracker:
             if boxes is not None:
                 for box in boxes:
                     confidence = float(box.conf[0])
+                    logger.debug(f"Detected box with confidence: {confidence}")
                     
                     if confidence >= self.confidence_threshold:
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
@@ -109,8 +110,8 @@ class DroneTracker:
                     center_x=center_x,
                     center_y=center_y,
                     start_time=start_time,
-                    date=start_time.date(),
-                    confidence=confidence
+                    detection_date=start_time.date(),
+                    confidence=0.6
                 )
                 session.add(detection)
                 session.commit()

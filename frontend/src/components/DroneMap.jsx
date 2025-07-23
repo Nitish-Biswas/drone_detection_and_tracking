@@ -41,7 +41,7 @@ const createDroneIcon = (color = '#ff0000', size = 'small') => {
 const DroneMap = ({ detections }) => {
   const [showRecent, setShowRecent] = useState(true)
   const [showOld, setShowOld] = useState(true)
-  const [mapCenter, setMapCenter] = useState([40.7128, -74.0060]) // Default to NYC
+  const [mapCenter, setMapCenter] = useState([27.135304, 78.001874]) // Default to NYC
 
   // Process detections for map display
   const processedDetections = useMemo(() => {

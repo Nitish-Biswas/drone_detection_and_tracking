@@ -15,6 +15,12 @@ export default defineConfig({
       '/video': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // Handle video stream proxy
+            proxyReq.setHeader('Connection', 'keep-alive');
+          });
+        }
       },
       '/ws': {
         target: 'ws://localhost:8000',

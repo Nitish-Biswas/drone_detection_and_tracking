@@ -3,6 +3,8 @@ import { Box, Typography, Alert } from '@mui/material'
 import { VideocamOff, Videocam } from '@mui/icons-material'
 import { getVideoStreamUrl } from '../services/api'
 
+console.log("VideoFeed component loaded")
+
 const VideoFeed = ({ cameraStatus }) => {
   const [imageError, setImageError] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
@@ -14,22 +16,24 @@ const VideoFeed = ({ cameraStatus }) => {
   const videoUrl = getVideoStreamUrl()
 
   const handleImageLoad = () => {
+    console.log('Video stream loaded successfully')
     setImageLoaded(true)
     setImageError(false)
     setRetryCount(0)
   }
 
   const handleImageError = () => {
+    console.error('Video stream error:', event)
     setImageError(true)
     setImageLoaded(false)
     
-    // Retry loading the image if camera is supposed to be running
     if (cameraStatus.is_running && retryCount < maxRetries) {
       retryTimeoutRef.current = setTimeout(() => {
         setRetryCount(prev => prev + 1)
         setImageError(false)
         if (imgRef.current) {
-          imgRef.current.src = `${videoUrl}?t=${Date.now()}`
+          // Force reload with cache busting
+          imgRef.current.src = `${videoUrl}?t=${Date.now()}&r=${Math.random()}`
         }
       }, 3000)
     }
@@ -37,26 +41,44 @@ const VideoFeed = ({ cameraStatus }) => {
 
   // Update image source when camera status changes
   useEffect(() => {
-    if (imgRef.current) {
-      if (cameraStatus.is_running) {
-        setImageError(false)
-        setRetryCount(0)
-        imgRef.current.src = `${videoUrl}?t=${Date.now()}`
-      } else {
-        setImageError(false)
-        setImageLoaded(false)
-      }
+    let loadingTimeout;
+    
+    if (cameraStatus.is_running && !imageLoaded && !imageError) {
+      // If still loading after 10 seconds, assume there's an issue
+      loadingTimeout = setTimeout(() => {
+        console.warn('Video loading timeout - assuming stream is working')
+        setImageLoaded(true) // Force show the stream
+      }, 1000)
     }
-  }, [cameraStatus.is_running, videoUrl])
-
-  // Cleanup retry timeout
-  useEffect(() => {
+    
     return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current)
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout)
       }
     }
-  }, [])
+  }, [cameraStatus.is_running, imageLoaded, imageError])
+
+  // useEffect(() => {
+  //   if (imgRef.current) {
+  //     if (cameraStatus.is_running) {
+  //       setImageError(false)
+  //       setRetryCount(0)
+  //       imgRef.current.src = `${videoUrl}?t=${Date.now()}`
+  //     } else {
+  //       setImageError(false)
+  //       setImageLoaded(false)
+  //     }
+  //   }
+  // }, [cameraStatus.is_running, videoUrl])
+
+  // // Cleanup retry timeout
+  // useEffect(() => {
+  //   return () => {
+  //     if (retryTimeoutRef.current) {
+  //       clearTimeout(retryTimeoutRef.current)
+  //     }
+  //   }
+  // }, [])
 
   const renderVideoContent = () => {
     if (!cameraStatus.is_running) {
@@ -138,24 +160,25 @@ const VideoFeed = ({ cameraStatus }) => {
         </Box>
       )
     }
-
+    
     return (
       <img
         ref={imgRef}
-        src={videoUrl}
-        alt="Drone Detection Video Feed"
-        className="video-feed"
+        src={cameraStatus.is_running ? `${videoUrl}?t=${Date.now()}` : ''}
+        alt="Live camera feed"
         onLoad={handleImageLoad}
         onError={handleImageError}
         style={{
           width: '100%',
           height: 'auto',
+          display: imageLoaded || !cameraStatus.is_running ? 'block' : 'none',
           maxHeight: '600px',
-          objectFit: 'contain',
-          display: imageLoaded ? 'block' : 'none'
+          objectFit: 'contain'
         }}
+        crossOrigin="anonymous" // Add this for CORS
       />
     )
+  
   }
 
   return (

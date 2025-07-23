@@ -9,7 +9,7 @@ class Detection(SQLModel, table=True):
     daily_id: int = Field(index=True)
     center_x: int
     center_y: int
-    start_time: datetime
+    start_time: datetime 
     end_time: Optional[datetime] = None
     duration_seconds: Optional[int] = None
     detection_date: date = Field(index=True)  # ✅ Renamed from 'date' to 'detection_date'
