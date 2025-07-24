@@ -14,6 +14,15 @@ from models import Detection, DetectionCreate
 from typing import Optional, Callable
 import asyncio
 import logging
+# Add this for device detection
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,12 +30,21 @@ logger = logging.getLogger(__name__)
 class DroneTracker:
     def __init__(self, model_path: str, confidence_threshold: float = 0.5):
         # Initialize YOLO model
+        self.device = 'cpu' #self._detect_device()
         self.model = YOLO(model_path)
+        self.model.to(self.device)
         self.confidence_threshold = confidence_threshold
         
         # Initialize DeepSORT tracker
-        self.tracker = DeepSort(max_age=20, n_init=2)
-        
+        self.tracker = DeepSort(
+            max_age=5,        # Keep tracks for 50 frames without detection          # Require 3 consecutive detections to confirm track
+            max_cosine_distance=0.4,  # Increase distance threshold
+            nn_budget=None,    # No limit on stored features
+            bgr=True,
+            
+
+            
+        )
         # Tracking variables
         self.daily_id_counter = 0
         self.tracked_objects = {}
@@ -47,6 +65,32 @@ class DroneTracker:
         
         # Load existing daily data
         self.load_daily_data()
+
+    def _detect_device(self):
+        """Detect the best available device for inference"""
+        try:
+            import torch
+            
+            if torch.cuda.is_available():
+                device = 'cuda'
+                device_name = torch.cuda.get_device_name(0)
+                logger.info(f"Using CUDA GPU: {device_name}")
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                device = 'mps'  # Apple Silicon GPU
+                logger.info("Using Apple Silicon GPU (MPS)")
+            else:
+                device = 'cpu'
+                logger.info("Using CPU for inference")
+                
+            return device
+            
+        except ImportError:
+            logger.warning("PyTorch not available, defaulting to CPU")
+            return 'cpu'
+        except Exception as e:
+            logger.error(f"Error detecting device: {e}, defaulting to CPU")
+            return 'cpu'
+
         
     def set_callbacks(self, on_new_detection: Optional[Callable] = None, 
                      on_status_update: Optional[Callable] = None):
@@ -93,17 +137,29 @@ class DroneTracker:
                     confidence = float(box.conf[0])
                     logger.debug(f"Detected box with confidence: {confidence}")
                     
-                    if confidence >= self.confidence_threshold:
+                    if confidence and confidence >= self.confidence_threshold:
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        detection = ([x1, y1, x2-x1, y2-y1], confidence, 'drone')
-                        detections.append(detection)
+                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                        width = x2 - x1
+                        height = y2 - y1
+                        if width > 0 and height > 0:
+                            # DeepSort expects [x, y, w, h] format
+                            detection = ([x1, y1, width, height], confidence, 'drone')
+                            detections.append(detection)
+                            logger.debug(f"Valid detection: bbox=[{x1}, {y1}, {width}, {height}], conf={confidence:.3f}")
+                       
                         
         return detections
         
     def save_detection_to_db(self, daily_id: int, center_x: int, center_y: int, 
                            start_time: datetime.datetime, confidence: float = None):
         """Save detection to database"""
+        print(daily_id,center_x,center_y,start_time,start_time.date(),confidence)
         try:
+            if confidence is None:
+                confidence = 0.5 
+
+           
             with Session(engine) as session:
                 detection = Detection(
                     daily_id=daily_id,
@@ -111,7 +167,7 @@ class DroneTracker:
                     center_y=center_y,
                     start_time=start_time,
                     detection_date=start_time.date(),
-                    confidence=0.6
+                    confidence=confidence
                 )
                 session.add(detection)
                 session.commit()
@@ -191,6 +247,8 @@ class DroneTracker:
     def draw_tracking_info(self, frame, tracks):
         """Draw bounding boxes and tracking information on frame"""
         for track in tracks:
+            if not track.is_confirmed():
+                continue
             track_id = track.track_id
             bbox = track.to_ltwh()
             
@@ -242,8 +300,8 @@ class DroneTracker:
     def capture_frames(self):
         """Main camera capture loop running in separate thread"""
         self.cap = cv2.VideoCapture(0)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        # self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        # self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
         if not self.cap.isOpened():
             logger.error("Failed to open camera")
@@ -268,7 +326,7 @@ class DroneTracker:
                     break
                     
                 # Run YOLO detection
-                results = self.model(frame, verbose=False)
+                results = self.model(frame, verbose=False,device=self.device)
                 
                 # Process detections for DeepSORT
                 detections = self.process_detections(results, frame)
@@ -292,7 +350,7 @@ class DroneTracker:
                     self.latest_frame = frame.copy()
                     
                 # Small delay to prevent overwhelming the system
-                time.sleep(0.033)  # ~30 FPS
+                time.sleep(0.011)  # ~30 FPS
                 
             except Exception as e:
                 logger.error(f"Error in capture loop: {e}")

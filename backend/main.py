@@ -20,6 +20,7 @@ from datetime import date, datetime
 from typing import List, Optional
 import os
 from pathlib import Path
+import numpy as np
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -30,20 +31,46 @@ engine = create_engine(DATABASE_URL, echo=True)
 # This function will run during startup and shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create database tables
-    print("Creating database tables...")
-    SQLModel.metadata.create_all(engine)
-    print("✅ Database tables created successfully")
+    """
+    Handles application startup and shutdown events.
+    """
+    # --- Startup ---
+    global tracker, manager
+    logger.info("🚀 Application starting up...")
     
-    # Initialize your tracker here if needed
-    # tracker = initialize_tracker()
-    
-    yield  # App runs here
-    
-    # Shutdown cleanup (optional)
-    print("🛑 Application shutting down")
+    # Initialize WebSocket Manager
+    manager = ConnectionManager()
+    logger.info("WebSocket Manager initialized.")
 
+    # Initialize Drone Tracker
+    try:
+        if not os.path.exists(MODEL_PATH):
+            logger.error(f"FATAL: Model file not found at '{MODEL_PATH}'. Tracker cannot be initialized.")
+            tracker = None
+        else:
+            tracker = DroneTracker(MODEL_PATH, confidence_threshold=0.5)
+            
+            # Define and set callbacks for WebSocket broadcasting
+            async def on_new_detection(data):
+                await manager.broadcast(json.dumps(data))
+                
+            async def on_status_update(data):
+                await manager.broadcast(json.dumps(data))
+                
+            tracker.set_callbacks(on_new_detection, on_status_update)
+            logger.info("✅ DroneTracker initialized successfully.")
+            
+    except Exception as e:
+        logger.error(f"💥 Failed to initialize DroneTracker: {e}", exc_info=True)
+        tracker = None
 
+    yield  # The application runs here
+
+    # --- Shutdown ---
+    logger.info("🛑 Application shutting down...")
+    if tracker and tracker.is_camera_running():
+        tracker.stop()
+        logger.info("Tracker stopped on shutdown.")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -66,7 +93,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Global tracker instance - Replace with your model path
-MODEL_PATH = "/Users/nitishbiswas/Documents/GitHub/drone_detection_and_tracking/backend/best.pt"  # Change this to your YOLO model path
+MODEL_PATH = 'best.pt'
 tracker: Optional[DroneTracker] = None
 
 # WebSocket connection manager
@@ -104,95 +131,91 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # Initialize tracker with callbacks
-def initialize_tracker():
-    global tracker
-    try:
-        if not os.path.exists(MODEL_PATH):
-            logger.error(f"Model file not found: {MODEL_PATH}")
-            return None
+# def initialize_tracker():
+#     global tracker
+#     try:
+#         if not os.path.exists(MODEL_PATH):
+#             logger.error(f"Model file not found: {MODEL_PATH}")
+#             return None
             
-        tracker = DroneTracker(MODEL_PATH, confidence_threshold=0.5)
+#         tracker = DroneTracker(MODEL_PATH, confidence_threshold=0.5)
         
-        # Set WebSocket callbacks
-        async def on_new_detection(data):
-            await manager.broadcast(json.dumps(data))
+#         # Set WebSocket callbacks
+#         async def on_new_detection(data):
+#             await manager.broadcast(json.dumps(data))
             
-        async def on_status_update(data):
-            await manager.broadcast(json.dumps(data))
+#         async def on_status_update(data):
+#             await manager.broadcast(json.dumps(data))
             
-        tracker.set_callbacks(on_new_detection, on_status_update)
-        logger.info("Tracker initialized successfully")
-        return tracker
+#         tracker.set_callbacks(on_new_detection, on_status_update)
+#         logger.info("Tracker initialized successfully")
+#         return tracker
         
-    except Exception as e:
-        logger.error(f"Failed to initialize tracker: {e}")
-        return None
+#     except Exception as e:
+#         logger.error(f"Failed to initialize tracker: {e}")
+#         return None
 
-# Initialize on startup
-@app.on_event("startup")
-async def startup_event():
-    initialize_tracker()
+# # Initialize on startup
+# @app.on_event("startup")
+# async def startup_event():
+#     initialize_tracker()
 
-initialize_tracker()
+
+
+
 
 def generate_frames():
     """Generate video frames for streaming"""
-    global tracker
-    
-    if not tracker:
-        # Return a placeholder frame
-        frame = cv2.imread('static/placeholder.jpg') if os.path.exists('static/placeholder.jpg') else None
-        if frame is None:
-            # Create a simple placeholder frame
-            frame = cv2.zeros((480, 640, 3), dtype=cv2.uint8)
-            cv2.putText(frame, "Camera Not Available", (50, 240), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-        
+    try:
         while True:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if not ret:
-                continue
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-            asyncio.sleep(1)  # 1 FPS for placeholder
-        return
-    
-    while True:
-        try:
-            frame = tracker.get_latest_frame()
-            
-            if frame is None:
-                # Create a "no signal" frame
-                frame = cv2.zeros((480, 640, 3), dtype=cv2.uint8)
-                if tracker.is_camera_running():
-                    cv2.putText(frame, "Initializing Camera...", (50, 240), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+            if tracker.is_camera_running():
+                frame = tracker.get_latest_frame()
+                if frame is not None:
+                    # Encode frame to JPEG
+                    ret, buffer = cv2.imencode('.jpg', frame)
+                    if ret:
+                        frame_bytes = buffer.tobytes()
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                    else:
+                        logger.error("Failed to encode frame to JPEG")
                 else:
-                    cv2.putText(frame, "Camera Stopped", (50, 240), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
-                    cv2.putText(frame, "Click Start to begin tracking", (50, 300), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            
-            # Encode frame as JPEG
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            if not ret:
-                continue
+                    # Create error frame using numpy (not cv2)
+                    error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.putText(error_frame, "No camera feed", (200, 240), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    
+                    ret, buffer = cv2.imencode('.jpg', error_frame)
+                    if ret:
+                        frame_bytes = buffer.tobytes()
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            else:
+                # Camera not running - create status frame
+                status_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(status_frame, "Camera Stopped", (180, 240), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-                   
-        except Exception as e:
-            logger.error(f"Error generating frame: {e}")
-            # Yield error frame
-            error_frame = cv2.zeros((480, 640, 3), dtype=cv2.uint8)
-            cv2.putText(error_frame, "Stream Error", (200, 240), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
-            ret, buffer = cv2.imencode('.jpg', error_frame)
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                ret, buffer = cv2.imencode('.jpg', status_frame)
+                if ret:
+                    frame_bytes = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             
-        time.sleep(0.033)  # ~30 FPS - FIXED
+            time.sleep(0.033)  # ~30 FPS
+            
+    except Exception as e:
+        logger.error(f"Error generating frame: {e}")
+        # Create final error frame
+        error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(error_frame, "Stream Error", (200, 240), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        ret, buffer = cv2.imencode('.jpg', error_frame)
+        if ret:
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 # API Routes
 
